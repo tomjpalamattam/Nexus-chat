@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Sign In — NexusChat{% endblock %}
+
+{% block body %}
+<style>
+  .wrap { min-height: 100vh; display: grid; place-items: center; }
+  .card { width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; }
+  .logo { font-size: 20px; font-weight: 600; color: var(--accent-light); margin-bottom: 28px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+  .sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 5px; }
+  .submit { width: 100%; justify-content: center; padding: 10px; margin-top: 6px; font-size: 15px; }
+</style>
+<div class="wrap">
+  <div class="card">
+    <div class="logo">⬡ NexusChat</div>
+    <h1>Welcome back</h1>
+    <p class="sub">Sign in to your account</p>
+    <form method="post">
+      {% csrf_token %}
+      <div class="field">
+        <label>Username</label>
+        <input name="username" autofocus/>
+      </div>
+      <div class="field">
+        <label>Password</label>
+        <input name="password" type="password"/>
+      </div>
+      <button type="submit" class="btn btn-primary submit">Sign In</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

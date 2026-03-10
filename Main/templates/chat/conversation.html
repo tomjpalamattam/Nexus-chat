@@ -1,0 +1,224 @@
+{% extends "base.html" %}
+{% block title %}{{ conversation.title }} — NexusChat{% endblock %}
+{% block extra_head %}
+<style>
+  html, body { overflow: hidden; }
+  .layout { display: flex; height: 100vh; }
+
+  /* sidebar */
+  .sidebar { width: var(--sidebar-w); background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; }
+  .sidebar-top { padding: 16px 12px; border-bottom: 1px solid var(--border); }
+  .logo { font-size: 16px; font-weight: 600; color: var(--accent-light); padding: 4px 8px 12px; }
+  .new-btn { width: 100%; justify-content: center; background: var(--surface2); color: var(--text-muted); border: 1px solid var(--border); }
+  .new-btn:hover { background: var(--surface); color: var(--text); border-color: var(--accent); }
+  .conv-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .conv-item { display: flex; align-items: center; padding: 8px 10px; border-radius: var(--radius-sm); cursor: pointer; margin-bottom: 1px; gap: 8px; }
+  .conv-item:hover { background: var(--surface2); }
+  .conv-item.active { background: var(--surface2); border: 1px solid var(--border); }
+  .conv-title { font-size: 13px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; text-decoration: none; }
+  .conv-item.active .conv-title { color: var(--text); }
+  .sidebar-footer { padding: 12px 16px; border-top: 1px solid var(--border); font-size: 13px; color: var(--text-muted); display: flex; justify-content: space-between; align-items: center; }
+
+  /* main */
+  .chat-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-header { padding: 14px 24px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; gap: 12px; }
+  .chat-header-title { font-size: 15px; font-weight: 500; flex: 1; }
+  .api-pill { font-size: 11px; padding: 3px 10px; border-radius: 20px; border: 1px solid; }
+  .api-pill.ok { border-color: rgba(74,222,128,.3); color: var(--green); }
+  .api-pill.missing { border-color: rgba(248,113,113,.3); color: var(--red); }
+
+  /* messages */
+  .messages-area { flex: 1; overflow-y: auto; padding: 24px; }
+  .msg-wrap { display: flex; gap: 12px; margin-bottom: 20px; max-width: 720px; margin-left: auto; margin-right: auto; }
+  .msg-wrap.user { flex-direction: row-reverse; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .avatar.assistant { background: var(--accent-glow); border: 1px solid var(--accent); color: var(--accent-light); }
+  .avatar.user { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+  .msg-body { flex: 1; }
+  .msg-role { font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .4px; }
+  .msg-wrap.user .msg-role { text-align: right; }
+  .msg-content { font-size: 14px; line-height: 1.65; color: var(--text); }
+  .msg-wrap.user .msg-content { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px 2px 12px 12px; padding: 10px 14px; display: inline-block; }
+  .empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: 15px; }
+
+  /* typing dots */
+  .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: bounce 1.2s infinite; }
+  .dot:nth-child(2) { animation-delay: .2s; }
+  .dot:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
+
+  /* input */
+  .input-area { padding: 16px 24px 20px; border-top: 1px solid var(--border); background: var(--surface); }
+  .input-wrap { max-width: 720px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 8px 8px 14px; transition: border-color .2s; }
+  .input-wrap:focus-within { border-color: var(--accent); }
+  #msg-input { background: transparent; border: none; resize: none; flex: 1; min-height: 24px; max-height: 160px; font-size: 14px; line-height: 1.5; padding: 2px 0; color: var(--text); }
+  #msg-input::placeholder { color: var(--text-dim); }
+  .send-btn { background: var(--accent); color: white; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; padding: 0; }
+  .send-btn:hover { background: var(--accent-light); }
+  .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .input-hint { font-size: 11px; color: var(--text-dim); text-align: center; margin-top: 6px; max-width: 720px; margin-left: auto; margin-right: auto; }
+</style>
+{% endblock %}
+{% block body %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-top">
+      <div class="logo">⬡ NexusChat</div>
+      <a href="{% url 'new_conversation' %}" class="btn new-btn">+ New Chat</a>
+    </div>
+    <div class="conv-list">
+      {% for conv in conversations %}
+      <div class="conv-item {% if conv.pk == conversation.pk %}active{% endif %}">
+        <a href="{% url 'conversation' conv.pk %}" class="conv-title">{{ conv.title }}</a>
+      </div>
+      {% endfor %}
+    </div>
+    <div class="sidebar-footer">
+      <span>{{ request.user.username }}</span>
+      <a href="{% url 'logout' %}">Sign out</a>
+    </div>
+  </aside>
+
+  <div class="chat-main">
+    <div class="chat-header">
+      <div class="chat-header-title">{{ conversation.title }}</div>
+      {% if has_api_key %}
+        <span class="api-pill ok">● {{ api_config.model_name }}</span>
+      {% else %}
+        <span class="api-pill missing">⚠ No API key</span>
+      {% endif %}
+    </div>
+
+    <div class="messages-area" id="messagesArea">
+      {% if not messages %}
+        <div class="empty">Send a message to start the conversation</div>
+      {% endif %}
+      {% for msg in messages %}
+      <div class="msg-wrap {{ msg.role }}">
+        <div class="avatar {{ msg.role }}">{% if msg.role == 'assistant' %}⬡{% else %}{{ request.user.username|first|upper }}{% endif %}</div>
+        <div class="msg-body">
+          <div class="msg-role">{{ msg.role }}</div>
+          <div class="msg-content">{{ msg.content }}</div>
+        </div>
+      </div>
+      {% endfor %}
+      <!-- live streaming message -->
+      <div class="msg-wrap assistant" id="liveMsg" style="display:none; max-width:720px; margin-left:auto; margin-right:auto;">
+        <div class="avatar assistant">⬡</div>
+        <div class="msg-body">
+          <div class="msg-role">assistant</div>
+          <div class="msg-content" id="liveContent">
+            <div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-wrap">
+        <textarea id="msg-input" placeholder="Message…" rows="1" {% if not has_api_key %}disabled{% endif %}></textarea>
+        <button class="send-btn" id="sendBtn" {% if not has_api_key %}disabled{% endif %}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2l5 5-5 5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+      </div>
+      <div class="input-hint">Enter to send · Shift+Enter for new line</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const CONV_ID = {{ conversation.pk }};
+const WS_URL = `ws://${window.location.host}/ws/chat/${CONV_ID}/`;
+let ws, streaming = false, buffer = '';
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onclose = () => setTimeout(connect, 2000);
+  ws.onmessage = e => handle(JSON.parse(e.data));
+}
+
+function handle(data) {
+  if (data.type === 'chunk') {
+    document.getElementById('liveMsg').style.display = 'flex';
+    buffer += data.content;
+    document.getElementById('liveContent').textContent = buffer;
+    scrollBottom();
+  } else if (data.type === 'done') {
+    appendAssistantMessage(buffer);
+    buffer = '';
+    document.getElementById('liveMsg').style.display = 'none';
+    document.getElementById('liveContent').innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+  } else if (data.type === 'error') {
+    alert(data.message);
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+  }
+}
+
+function send() {
+  const input = document.getElementById('msg-input');
+  const msg = input.value.trim();
+  if (!msg || streaming || ws.readyState !== WebSocket.OPEN) return;
+  appendUserMessage(msg);
+  input.value = '';
+  input.style.height = '';
+  streaming = true;
+  document.getElementById('sendBtn').disabled = true;
+  ws.send(JSON.stringify({ message: msg }));
+}
+
+function appendUserMessage(content) {
+  const area = document.getElementById('messagesArea');
+  const div = document.createElement('div');
+  div.className = 'msg-wrap user';
+  div.innerHTML = `
+    <div class="avatar user">{{ request.user.username|first|upper }}</div>
+    <div class="msg-body">
+      <div class="msg-role">you</div>
+      <div class="msg-content">${escHtml(content)}</div>
+    </div>`;
+  area.insertBefore(div, document.getElementById('liveMsg'));
+  scrollBottom();
+}
+
+function appendAssistantMessage(content) {
+  const area = document.getElementById('messagesArea');
+  const div = document.createElement('div');
+  div.className = 'msg-wrap assistant';
+  div.innerHTML = `
+    <div class="avatar assistant">⬡</div>
+    <div class="msg-body">
+      <div class="msg-role">assistant</div>
+      <div class="msg-content">${escHtml(content)}</div>
+    </div>`;
+  area.insertBefore(div, document.getElementById('liveMsg'));
+  scrollBottom();
+}
+
+function scrollBottom() {
+  const area = document.getElementById('messagesArea');
+  area.scrollTop = area.scrollHeight;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// auto-resize textarea
+const input = document.getElementById('msg-input');
+input.addEventListener('input', () => {
+  input.style.height = '';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+});
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+document.getElementById('sendBtn').addEventListener('click', send);
+
+connect();
+scrollBottom();
+</script>
+{% endblock %}

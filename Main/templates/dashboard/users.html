@@ -1,0 +1,57 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Users — Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<style>
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  th { background: var(--surface2); padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot.on { background: var(--green); }
+  .dot.off { background: var(--text-dim); }
+  .empty { text-align: center; color: var(--text-muted); padding: 40px; }
+</style>
+
+<div class="header">
+  <div class="d-header" style="margin:0">
+    <h1>Users</h1>
+    <p>C-tier users under your account</p>
+  </div>
+  <a href="{% url 'dashboard_create_user' %}" class="btn btn-primary">+ New User</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Username</th><th>Email</th><th>Joined</th><th>Status</th><th>Action</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for u in users %}
+    <tr>
+      <td><strong>{{ u.username }}</strong></td>
+      <td style="color:var(--text-muted)">{{ u.email|default:"—" }}</td>
+      <td style="color:var(--text-muted)">{{ u.date_joined|date:"M d, Y" }}</td>
+      <td>
+        <span class="dot {% if u.is_active %}on{% else %}off{% endif %}"></span>
+        {{ u.is_active|yesno:"Active,Disabled" }}
+      </td>
+      <td>
+        <form method="post" action="{% url 'dashboard_toggle_user' u.pk %}">
+          {% csrf_token %}
+          <button type="submit" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">
+            {{ u.is_active|yesno:"Disable,Enable" }}
+          </button>
+        </form>
+      </td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="5" class="empty">No users yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

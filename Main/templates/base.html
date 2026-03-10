@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>{% block title %}NexusChat{% endblock %}</title>
+    <style>
+      *,
+      *::before,
+      *::after {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      :root {
+        --bg: #0d0d0f;
+        --surface: #161618;
+        --surface2: #1e1e22;
+        --border: #2e2e36;
+        --text: #e8e8f0;
+        --text-muted: #888896;
+        --text-dim: #55555e;
+        --accent: #7c6af7;
+        --accent-light: #9d8fff;
+        --accent-glow: rgba(124, 106, 247, 0.15);
+        --green: #4ade80;
+        --red: #f87171;
+        --sidebar-w: 260px;
+        --radius: 10px;
+        --radius-sm: 6px;
+      }
+      html,
+      body {
+        height: 100%;
+        font-family: system-ui, sans-serif;
+        background: var(--bg);
+        color: var(--text);
+        font-size: 15px;
+      }
+      a {
+        color: var(--accent-light);
+        text-decoration: none;
+      }
+      button,
+      .btn {
+        cursor: pointer;
+        font-family: inherit;
+        font-size: 14px;
+        font-weight: 500;
+        border: none;
+        border-radius: var(--radius-sm);
+        padding: 8px 16px;
+        transition: all 0.2s;
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .btn-primary {
+        background: var(--accent);
+        color: white;
+      }
+      .btn-primary:hover {
+        background: var(--accent-light);
+      }
+      .btn-ghost {
+        background: transparent;
+        color: var(--text-muted);
+        border: 1px solid var(--border);
+      }
+      .btn-ghost:hover {
+        background: var(--surface2);
+        color: var(--text);
+      }
+      input,
+      textarea {
+        font-family: inherit;
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        color: var(--text);
+        border-radius: var(--radius-sm);
+        padding: 8px 12px;
+        font-size: 14px;
+        outline: none;
+        transition: border-color 0.2s;
+        width: 100%;
+      }
+      input:focus,
+      textarea:focus {
+        border-color: var(--accent);
+      }
+      .messages-flash {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 1000;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      .flash {
+        background: var(--surface2);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 12px 16px;
+        font-size: 14px;
+        max-width: 320px;
+      }
+      .flash.error {
+        border-color: var(--red);
+        color: var(--red);
+      }
+      .flash.success {
+        border-color: var(--green);
+        color: var(--green);
+      }
+    </style>
+    {% block extra_head %}{% endblock %}
+  </head>
+  <body>
+    {% if messages %}
+    <div class="messages-flash">
+      {% for message in messages %}
+      <div class="flash {{ message.tags }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+    <script>
+      setTimeout(
+        () => document.querySelectorAll(".flash").forEach((e) => e.remove()),
+        4000,
+      );
+    </script>
+    {% endif %} {% block body %}{% endblock %}
+  </body>
+</html>

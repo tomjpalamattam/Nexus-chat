@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+
+{% block title %}Register — NexusChat{% endblock %}
+
+{% block body %}
+<style>
+  .wrap { min-height: 100vh; display: grid; place-items: center; }
+  .card { width: 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 40px; }
+  .logo { font-size: 20px; font-weight: 600; color: var(--accent-light); margin-bottom: 28px; }
+  h1 { font-size: 22px; font-weight: 600; margin-bottom: 6px; }
+  .sub { color: var(--text-muted); font-size: 14px; margin-bottom: 24px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 5px; }
+  .errorlist { list-style: none; color: var(--red); font-size: 12px; margin-top: 4px; }
+  .submit { width: 100%; justify-content: center; padding: 10px; margin-top: 6px; font-size: 15px; }
+  .footer { margin-top: 16px; text-align: center; font-size: 13px; color: var(--text-muted); }
+</style>
+<div class="wrap">
+  <div class="card">
+    <div class="logo">⬡ NexusChat</div>
+    <h1>Create account</h1>
+    <p class="sub">Save your conversation history</p>
+    <form method="post">
+      {% csrf_token %}
+      {% for field in form %}
+      <div class="field">
+        <label>{{ field.label }}</label>
+        {{ field }}
+        {{ field.errors }}
+      </div>
+      {% endfor %}
+      <button type="submit" class="btn btn-primary submit">Register</button>
+    </form>
+    <div class="footer">Already have an account? <a href="{% url 'login' %}">Sign in</a></div>
+  </div>
+</div>
+{% endblock %}

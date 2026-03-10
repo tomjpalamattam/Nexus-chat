@@ -1,0 +1,15 @@
+# Virtual env
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Django
+staticfiles/
+
+# Secrets & sessions — all under Main/
+Main/.env
+Main/data/
+Main/playwright/session.json

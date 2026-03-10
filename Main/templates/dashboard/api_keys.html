@@ -1,0 +1,69 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}API Keys — Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<style>
+  .keys-list { margin-bottom: 32px; }
+  .key-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px 20px; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .key-label { font-weight: 500; font-size: 15px; }
+  .key-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .key-actions { display: flex; gap: 8px; align-items: center; }
+  .default-badge { font-size: 11px; background: rgba(74,222,128,.12); color: var(--green); border-radius: 20px; padding: 2px 9px; font-weight: 600; }
+  .add-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; }
+  .add-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 20px; }
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 5px; }
+  .span-2 { grid-column: 1 / -1; }
+  .check-row { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-muted); margin-bottom: 16px; }
+</style>
+
+<div class="d-header">
+  <h1>API Keys</h1>
+  <p>Configure LLM providers for your chat page</p>
+</div>
+
+<div class="keys-list">
+  {% for config in configs %}
+  <div class="key-card">
+    <div>
+      <div class="key-label">
+        {{ config.label }}
+        {% if config.is_default %}<span class="default-badge">default</span>{% endif %}
+      </div>
+      <div class="key-meta">{{ config.get_provider_display }} · {{ config.model_name }}</div>
+    </div>
+    <div class="key-actions">
+      {% if not config.is_default %}
+      <form method="post" action="{% url 'dashboard_set_default_api_key' config.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">Set Default</button>
+      </form>
+      {% endif %}
+      <form method="post" action="{% url 'dashboard_delete_api_key' config.pk %}">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost" style="font-size:12px;padding:5px 10px;color:var(--red)">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% empty %}
+  <div style="color:var(--text-muted);font-size:14px;margin-bottom:24px">No API keys yet. Add one below.</div>
+  {% endfor %}
+</div>
+
+<div class="add-card">
+  <h2>Add API Key</h2>
+  <form method="post" action="{% url 'dashboard_add_api_key' %}">
+    {% csrf_token %}
+    <div class="form-grid">
+      <div class="field"><label>Label</label>{{ form.label }}</div>
+      <div class="field"><label>Provider</label>{{ form.provider }}</div>
+      <div class="field"><label>API Key</label>{{ form.api_key }}</div>
+      <div class="field"><label>Model Name</label>{{ form.model_name }}</div>
+      <div class="field span-2"><label>Base URL (optional)</label>{{ form.base_url }}</div>
+    </div>
+    <div class="check-row">{{ form.is_default }} Set as default</div>
+    <button type="submit" class="btn btn-primary">Add Key</button>
+  </form>
+</div>
+{% endblock %}

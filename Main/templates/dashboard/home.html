@@ -1,0 +1,70 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Dashboard — NexusChat{% endblock %}
+
+{% block dashboard_content %}
+<style>
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 32px; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px 24px; }
+  .stat-label { font-size: 12px; color: var(--text-muted); font-weight: 500; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 8px; }
+  .stat-value { font-size: 28px; font-weight: 600; }
+  .stat-card.warn .stat-value { color: var(--red); }
+  .section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 20px; }
+  .section-header { padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
+  .section-header h2 { font-size: 15px; font-weight: 600; }
+  .section-body { padding: 8px 0; }
+  .row { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px; font-size: 14px; }
+  .row:hover { background: var(--surface2); }
+  .row-title { font-weight: 500; }
+  .row-meta { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .empty { padding: 24px 20px; color: var(--text-muted); font-size: 14px; }
+  .chat-url { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 14px; font-size: 13px; font-family: monospace; color: var(--accent-light); margin-bottom: 24px; display: flex; align-items: center; justify-content: space-between; }
+</style>
+
+<div class="d-header">
+  <h1>Welcome, {{ request.user.username }}</h1>
+  <p>Your chat page is live at the URL below</p>
+</div>
+
+<div class="chat-url">
+  <span>http://127.0.0.1:8000/chat/{{ request.user.slug }}/</span>
+  <a href="/chat/{{ request.user.slug }}/" target="_blank" class="btn btn-ghost" style="font-size:12px;padding:5px 10px">Open ↗</a>
+</div>
+
+<div class="stats">
+  <div class="stat-card">
+    <div class="stat-label">Users</div>
+    <div class="stat-value">{{ c_user_count }}</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-label">Conversations</div>
+    <div class="stat-value">{{ conv_count }}</div>
+  </div>
+  <div class="stat-card {% if not has_default_key %}warn{% endif %}">
+    <div class="stat-label">API Key</div>
+    <div class="stat-value">{% if has_default_key %}✓{% else %}✗{% endif %}</div>
+  </div>
+</div>
+
+<div class="section">
+  <div class="section-header">
+    <h2>Recent Conversations</h2>
+    <a href="{% url 'dashboard_conversations' %}" style="font-size:13px;color:var(--text-muted)">View all</a>
+  </div>
+  <div class="section-body">
+    {% for conv in recent_conversations %}
+    <a href="{% url 'dashboard_conversation_detail' conv.pk %}" style="text-decoration:none;color:inherit">
+      <div class="row">
+        <div>
+          <div class="row-title">{{ conv.title }}</div>
+          <div class="row-meta">{{ conv.updated_at|timesince }} ago · {{ conv.user.username|default:"anonymous" }}</div>
+        </div>
+        <span style="color:var(--text-dim);font-size:13px">→</span>
+      </div>
+    </a>
+    {% empty %}
+    <div class="empty">No conversations yet. Share your chat URL to get started.</div>
+    {% endfor %}
+  </div>
+</div>
+{% endblock %}

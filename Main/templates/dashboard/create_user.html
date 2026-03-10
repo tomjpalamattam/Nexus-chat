@@ -1,0 +1,35 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Create User — Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<style>
+  .card { max-width: 420px; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; }
+  .field { margin-bottom: 14px; }
+  .field label { display: block; font-size: 12px; font-weight: 500; color: var(--text-muted); margin-bottom: 5px; }
+  .errorlist { list-style: none; color: var(--red); font-size: 12px; margin-top: 4px; }
+  .actions { display: flex; gap: 10px; margin-top: 8px; }
+</style>
+
+<div class="d-header">
+  <h1>Create User</h1>
+  <p>New C-tier user under your account</p>
+</div>
+
+<div class="card">
+  <form method="post">
+    {% csrf_token %}
+    {% for field in form %}
+    <div class="field">
+      <label>{{ field.label }}</label>
+      {{ field }}
+      {{ field.errors }}
+    </div>
+    {% endfor %}
+    <div class="actions">
+      <button type="submit" class="btn btn-primary">Create</button>
+      <a href="{% url 'dashboard_users' %}" class="btn btn-ghost">Cancel</a>
+    </div>
+  </form>
+</div>
+{% endblock %}

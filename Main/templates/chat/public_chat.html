@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Chat with {{ provider.username }}{% endblock %}
+
+{% block extra_head %}
+<style>
+  html, body { overflow: hidden; }
+  .layout { display: flex; flex-direction: column; height: 100vh; max-width: 800px; margin: 0 auto; }
+
+  .chat-header { padding: 16px 24px; border-bottom: 1px solid var(--border); background: var(--surface); display: flex; align-items: center; justify-content: space-between; }
+  .provider-name { font-size: 16px; font-weight: 600; }
+  .provider-sub { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+  .header-actions { display: flex; gap: 10px; align-items: center; }
+
+  .messages-area { flex: 1; overflow-y: auto; padding: 24px; }
+  .msg-wrap { display: flex; gap: 12px; margin-bottom: 20px; }
+  .msg-wrap.user { flex-direction: row-reverse; }
+  .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; flex-shrink: 0; }
+  .avatar.assistant { background: var(--accent-glow); border: 1px solid var(--accent); color: var(--accent-light); }
+  .avatar.user { background: var(--surface2); border: 1px solid var(--border); color: var(--text-muted); }
+  .msg-body { flex: 1; }
+  .msg-role { font-size: 11px; font-weight: 600; color: var(--text-dim); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .4px; }
+  .msg-wrap.user .msg-role { text-align: right; }
+  .msg-content { font-size: 14px; line-height: 1.65; color: var(--text); }
+  .msg-wrap.user .msg-content { background: var(--surface2); border: 1px solid var(--border); border-radius: 12px 2px 12px 12px; padding: 10px 14px; display: inline-block; }
+  .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-muted); gap: 8px; }
+  .empty .name { font-size: 20px; font-weight: 600; color: var(--text); }
+
+  .typing { display: flex; gap: 4px; align-items: center; padding: 4px 0; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: bounce 1.2s infinite; }
+  .dot:nth-child(2) { animation-delay: .2s; }
+  .dot:nth-child(3) { animation-delay: .4s; }
+  @keyframes bounce { 0%,60%,100% { transform: translateY(0); } 30% { transform: translateY(-5px); } }
+
+  .input-area { padding: 16px 24px 20px; border-top: 1px solid var(--border); background: var(--surface); }
+  .input-wrap { display: flex; gap: 10px; align-items: flex-end; background: var(--surface2); border: 1px solid var(--border); border-radius: 12px; padding: 8px 8px 8px 14px; transition: border-color .2s; }
+  .input-wrap:focus-within { border-color: var(--accent); }
+  #msg-input { background: transparent; border: none; resize: none; flex: 1; min-height: 24px; max-height: 160px; font-size: 14px; line-height: 1.5; padding: 2px 0; color: var(--text); }
+  #msg-input::placeholder { color: var(--text-dim); }
+  .send-btn { background: var(--accent); color: white; width: 34px; height: 34px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; padding: 0; }
+  .send-btn:hover { background: var(--accent-light); }
+  .send-btn:disabled { opacity: .4; cursor: not-allowed; }
+  .input-hint { font-size: 11px; color: var(--text-dim); text-align: center; margin-top: 6px; }
+
+  .register-banner { background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; margin: 0 24px 16px; display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+  .register-banner span { color: var(--text-muted); }
+</style>
+{% endblock %}
+
+{% block body %}
+<div class="layout">
+  <div class="chat-header">
+    <div>
+      <div class="provider-name">{{ provider.username }}</div>
+      <div class="provider-sub">Ask me anything</div>
+    </div>
+    <div class="header-actions">
+      {% if request.user.is_authenticated %}
+        <span style="font-size:13px;color:var(--text-muted)">{{ request.user.username }}</span>
+      {% else %}
+        <a href="{% url 'login' %}?next={{ request.path }}" class="btn btn-ghost" style="font-size:13px;padding:6px 12px">Sign in</a>
+        <a href="{% url 'register' %}?next={{ request.path }}" class="btn btn-primary" style="font-size:13px;padding:6px 12px">Register</a>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="messages-area" id="messagesArea">
+    {% if not messages %}
+    <div class="empty">
+      <div class="name">👋 Hi there</div>
+      <div>Start a conversation with {{ provider.username }}</div>
+    </div>
+    {% endif %}
+    {% for msg in messages %}
+    <div class="msg-wrap {{ msg.role }}">
+      <div class="avatar {{ msg.role }}">{% if msg.role == 'assistant' %}⬡{% else %}?{% endif %}</div>
+      <div class="msg-body">
+        <div class="msg-role">{{ msg.role }}</div>
+        <div class="msg-content">{{ msg.content }}</div>
+      </div>
+    </div>
+    {% endfor %}
+    <div class="msg-wrap assistant" id="liveMsg" style="display:none">
+      <div class="avatar assistant">⬡</div>
+      <div class="msg-body">
+        <div class="msg-role">assistant</div>
+        <div class="msg-content" id="liveContent">
+          <div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if not request.user.is_authenticated and messages %}
+  <div class="register-banner">
+    <span>Register to save your conversation history</span>
+    <a href="{% url 'register' %}?next={{ request.path }}" class="btn btn-primary" style="font-size:13px;padding:6px 12px">Register</a>
+  </div>
+  {% endif %}
+
+  <div class="input-area">
+    <div class="input-wrap">
+      <textarea id="msg-input" placeholder="Type a message…" rows="1" {% if not has_api_key %}disabled{% endif %}></textarea>
+      <button class="send-btn" id="sendBtn" {% if not has_api_key %}disabled{% endif %}>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M2 7h10M7 2l5 5-5 5" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+    <div class="input-hint">
+      {% if not has_api_key %}No API key configured for this provider{% else %}Enter to send · Shift+Enter for new line{% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+const CONV_ID = {{ conversation.pk }};
+const WS_URL = `ws://${window.location.host}/ws/chat/${CONV_ID}/`;
+let ws, streaming = false, buffer = '';
+
+function connect() {
+  ws = new WebSocket(WS_URL);
+  ws.onclose = () => setTimeout(connect, 2000);
+  ws.onmessage = e => handle(JSON.parse(e.data));
+}
+
+function handle(data) {
+  if (data.type === 'chunk') {
+    document.getElementById('liveMsg').style.display = 'flex';
+    buffer += data.content;
+    document.getElementById('liveContent').textContent = buffer;
+    scrollBottom();
+  } else if (data.type === 'done') {
+    appendAssistantMessage(buffer);
+    buffer = '';
+    document.getElementById('liveMsg').style.display = 'none';
+    document.getElementById('liveContent').innerHTML = '<div class="typing"><div class="dot"></div><div class="dot"></div><div class="dot"></div></div>';
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+  } else if (data.type === 'error') {
+    alert(data.message);
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+  }
+}
+
+function send() {
+  const input = document.getElementById('msg-input');
+  const msg = input.value.trim();
+  if (!msg || streaming || ws.readyState !== WebSocket.OPEN) return;
+  appendUserMessage(msg);
+  input.value = '';
+  input.style.height = '';
+  streaming = true;
+  document.getElementById('sendBtn').disabled = true;
+  ws.send(JSON.stringify({ message: msg }));
+}
+
+function appendUserMessage(content) {
+  const area = document.getElementById('messagesArea');
+  document.querySelector('.empty')?.remove();
+  const div = document.createElement('div');
+  div.className = 'msg-wrap user';
+  div.innerHTML = `
+    <div class="avatar user">?</div>
+    <div class="msg-body">
+      <div class="msg-role">you</div>
+      <div class="msg-content">${escHtml(content)}</div>
+    </div>`;
+  area.insertBefore(div, document.getElementById('liveMsg'));
+  scrollBottom();
+}
+
+function appendAssistantMessage(content) {
+  const area = document.getElementById('messagesArea');
+  const div = document.createElement('div');
+  div.className = 'msg-wrap assistant';
+  div.innerHTML = `
+    <div class="avatar assistant">⬡</div>
+    <div class="msg-body">
+      <div class="msg-role">assistant</div>
+      <div class="msg-content">${escHtml(content)}</div>
+    </div>`;
+  area.insertBefore(div, document.getElementById('liveMsg'));
+  scrollBottom();
+}
+
+function scrollBottom() {
+  const area = document.getElementById('messagesArea');
+  area.scrollTop = area.scrollHeight;
+}
+
+function escHtml(t) {
+  return t.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+const input = document.getElementById('msg-input');
+input.addEventListener('input', () => {
+  input.style.height = '';
+  input.style.height = Math.min(input.scrollHeight, 160) + 'px';
+});
+input.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); }
+});
+document.getElementById('sendBtn').addEventListener('click', send);
+
+connect();
+scrollBottom();
+</script>
+{% endblock %}

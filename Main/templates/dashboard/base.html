@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+
+{% block body %}
+<style>
+  html, body { overflow: auto; }
+  .d-layout { display: flex; min-height: 100vh; }
+  .d-sidebar { width: 240px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; flex-shrink: 0; position: sticky; top: 0; height: 100vh; }
+  .d-logo { padding: 20px; font-size: 17px; font-weight: 600; color: var(--accent-light); border-bottom: 1px solid var(--border); }
+  .d-nav { padding: 10px; flex: 1; }
+  .d-nav a { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: var(--radius-sm); color: var(--text-muted); font-size: 14px; text-decoration: none; transition: all .15s; margin-bottom: 2px; }
+  .d-nav a:hover, .d-nav a.active { background: var(--surface2); color: var(--text); }
+  .d-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
+  .d-footer .username { font-size: 13px; font-weight: 500; }
+  .d-footer .tier { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
+  .d-footer a { font-size: 13px; color: var(--text-muted); text-decoration: none; }
+  .d-footer a:hover { color: var(--text); }
+  .d-main { flex: 1; padding: 40px; min-width: 0; }
+  .d-header { margin-bottom: 32px; }
+  .d-header h1 { font-size: 24px; font-weight: 600; }
+  .d-header p { color: var(--text-muted); font-size: 14px; margin-top: 4px; }
+</style>
+<div class="d-layout">
+  <aside class="d-sidebar">
+    <div class="d-logo">⬡ Dashboard</div>
+    <nav class="d-nav">
+      <a href="{% url 'dashboard_home' %}" class="{% if request.resolver_match.url_name == 'dashboard_home' %}active{% endif %}">
+        ▦ Overview
+      </a>
+      <a href="{% url 'dashboard_users' %}" class="{% if 'users' in request.resolver_match.url_name %}active{% endif %}">
+        👥 Users
+      </a>
+      <a href="{% url 'dashboard_api_keys' %}" class="{% if 'api_key' in request.resolver_match.url_name %}active{% endif %}">
+        🔑 API Keys
+      </a>
+      <a href="{% url 'dashboard_conversations' %}" class="{% if 'conversation' in request.resolver_match.url_name %}active{% endif %}">
+        💬 Conversations
+      </a>
+      <a href="/chat/{{ request.user.slug }}/" target="_blank">
+        ↗ My Chat Page
+      </a>
+    </nav>
+    <div class="d-footer">
+      <div class="username">{{ request.user.username }}</div>
+      <div class="tier">{{ request.user.get_tier_display }}</div>
+      <a href="{% url 'logout' %}">Sign out</a>
+    </div>
+  </aside>
+  <main class="d-main">
+    {% if messages %}
+    <div style="margin-bottom:20px">
+      {% for message in messages %}
+      <div class="flash {{ message.tags }}" style="margin-bottom:8px">{{ message }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% block dashboard_content %}{% endblock %}
+  </main>
+</div>
+{% endblock %}

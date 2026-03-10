@@ -1,0 +1,37 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Conversations — Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<style>
+  table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  th { background: var(--surface2); padding: 11px 16px; text-align: left; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 14px; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface2); }
+  .empty { text-align: center; color: var(--text-muted); padding: 40px; }
+</style>
+
+<div class="d-header">
+  <h1>Conversations</h1>
+  <p>All conversations on your chat page</p>
+</div>
+
+<table>
+  <thead>
+    <tr><th>Title</th><th>User</th><th>Last Active</th><th></th></tr>
+  </thead>
+  <tbody>
+    {% for conv in conversations %}
+    <tr>
+      <td><strong>{{ conv.title }}</strong></td>
+      <td style="color:var(--text-muted)">{{ conv.user.username|default:"anonymous" }}</td>
+      <td style="color:var(--text-muted)">{{ conv.updated_at|timesince }} ago</td>
+      <td><a href="{% url 'dashboard_conversation_detail' conv.pk %}" style="font-size:13px;color:var(--accent-light)">View →</a></td>
+    </tr>
+    {% empty %}
+    <tr><td colspan="4" class="empty">No conversations yet.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
