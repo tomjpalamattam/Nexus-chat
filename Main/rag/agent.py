@@ -1,22 +1,59 @@
+"""
+RAG agent using langchain.agents.create_agent (current non-deprecated API).
+
+LLM is auto-selected based on api_config.provider:
+  - 'deepseek'          → ChatDeepSeek
+  - 'openai' / others   → ChatOpenAI (also handles openai_compatible via base_url)
+
+Streaming: agent.astream(stream_mode="messages", version="v2")
+  Each chunk is a StreamPart dict {"type", "data", "ns"}.
+  type=="messages" → data==(token, metadata)
+  We yield token.content_blocks entries where type=="text", skipping tool calls.
+"""
 from typing import AsyncIterator
 
 from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
-from langchain_openai import ChatOpenAI
 from langchain.tools import tool
-from langchain.agents import create_agent          # current, non-deprecated API
+from langchain.agents import create_agent
 from langgraph.checkpoint.memory import MemorySaver
 
 from .ingest import get_vectorstore
 
-# Shared checkpointer — keeps per-thread history across WebSocket reconnects
 _checkpointer = MemorySaver()
 
 
+# ── LLM factory ───────────────────────────────────────────────────────────────
+
+def _make_llm(api_config):
+    provider = getattr(api_config, 'provider', 'openai')
+
+    if provider == 'deepseek':
+        from langchain_deepseek import ChatDeepSeek
+        return ChatDeepSeek(
+            model=api_config.model_name or 'deepseek-chat',
+            api_key=api_config.api_key,
+            temperature=0,
+            max_tokens=None,
+            timeout=None,
+            max_retries=2,
+        )
+
+    # Default: OpenAI or OpenAI-compatible (Ollama, Together, etc.)
+    from langchain_openai import ChatOpenAI
+    kwargs = {
+        'model':     api_config.model_name,
+        'api_key':   api_config.api_key,
+        'streaming': True,
+    }
+    if getattr(api_config, 'base_url', None):
+        kwargs['base_url'] = api_config.base_url
+    return ChatOpenAI(**kwargs)
+
+
+# ── tool factory ──────────────────────────────────────────────────────────────
+
 def _make_retrieve_tool(provider):
-    """
-    Build a retrieve_context tool bound to a specific provider's Qdrant collection.
-    Constructed dynamically so the vectorstore is provider-scoped.
-    """
+    """Build a retrieve_context tool bound to this provider's Qdrant collection."""
     vectorstore = get_vectorstore(provider)
 
     @tool(response_format='content_and_artifact')
@@ -38,34 +75,20 @@ def _make_retrieve_tool(provider):
     return retrieve_context
 
 
-def _make_llm(api_config):
-    kwargs = {
-        'model':     api_config.model_name,
-        'api_key':   api_config.api_key,
-        'streaming': True,
-    }
-    if api_config.base_url:
-        kwargs['base_url'] = api_config.base_url
-    return ChatOpenAI(**kwargs)
-
+# ── agent builder ─────────────────────────────────────────────────────────────
 
 def build_agent(api_config, provider):
-    """
-    Build a create_agent graph for a given api_config + provider.
-    MemorySaver checkpointer persists conversation history across
-    WebSocket reconnects as long as thread_id is stable.
-    """
     llm   = _make_llm(api_config)
     tools = [_make_retrieve_tool(provider)]
 
     system_prompt = (
         f'You are a helpful assistant for {provider.username}. '
-        'You have access to a retrieval tool that searches through documents '
+        'You have access to a retrieval tool that searches documents '
         'uploaded by the provider. '
-        'Use the tool whenever the user asks something that could be answered '
+        'Use it whenever the user asks something that could be answered '
         'from those documents. '
-        'If the documents contain no relevant information, answer from your '
-        'general knowledge and say so clearly.'
+        'If the documents contain no relevant information, answer from '
+        'your general knowledge and say so clearly.'
     )
 
     return create_agent(
@@ -76,6 +99,8 @@ def build_agent(api_config, provider):
     )
 
 
+# ── streaming entry point ─────────────────────────────────────────────────────
+
 async def stream_agent_response(
     api_config,
     provider,
@@ -85,20 +110,17 @@ async def stream_agent_response(
     thread_id: str,
 ) -> AsyncIterator[str]:
     """
-    Async generator — yields plain text chunks from the agent's final AI response.
+    Async generator — yields plain text chunks from the agent's final response.
 
     Uses astream(stream_mode="messages", version="v2") per current docs:
-      - Each chunk is a StreamPart dict: {"type": ..., "data": ..., "ns": ...}
-      - chunk["type"] == "messages"  →  chunk["data"] == (token, metadata)
-      - We filter token.content_blocks for {"type": "text"} entries,
-        skipping tool_call_chunk blocks so only final prose is sent to the WS.
+      chunk["type"] == "messages"  →  chunk["data"] == (token, metadata)
+      token.content_blocks         →  list of typed dicts
+      {"type": "text", "text": "..."}        ← yield these
+      {"type": "tool_call_chunk", ...}       ← skip these
     """
     agent = build_agent(api_config, provider)
 
-    # Rebuild message list (history already excludes the current message)
     messages: list = []
-
-    # Include conversation-level system prompt if non-default
     if system_prompt and system_prompt.strip() != 'You are a helpful assistant.':
         messages.append(SystemMessage(content=system_prompt))
 
@@ -118,14 +140,11 @@ async def stream_agent_response(
         stream_mode='messages',
         version='v2',
     ):
-        # v2 format: every chunk is a StreamPart dict
         if chunk.get('type') != 'messages':
             continue
 
-        token, metadata = chunk['data']
+        token, _metadata = chunk['data']
 
-        # content_blocks is the normalized list per current LangChain docs
-        # Each block is {"type": "text", "text": "..."} or a tool_call_chunk dict
         for block in getattr(token, 'content_blocks', []):
             if isinstance(block, dict) and block.get('type') == 'text':
                 text = block.get('text', '')

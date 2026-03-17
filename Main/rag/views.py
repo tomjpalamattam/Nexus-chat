@@ -5,12 +5,19 @@ from django.contrib import messages
 from django.http import JsonResponse
 
 from accounts.models import User
-from .models import ProviderDocument
+from .models import ProviderDocument, ProviderEmbeddingConfig
 from .tasks import ingest_async
 from .ingest import delete_document_vectors
 
 ALLOWED_EXTENSIONS = {'.pdf', '.txt', '.docx', '.doc', '.md', '.markdown'}
 MAX_UPLOAD_MB = 50
+
+EMBED_MODEL_CHOICES = [
+    ('Qwen/Qwen3-Embedding-8B',              'Qwen3-Embedding-8B (recommended)'),
+    ('sentence-transformers/all-MiniLM-L6-v2', 'all-MiniLM-L6-v2 (lightweight)'),
+    ('BAAI/bge-large-en-v1.5',               'BGE-Large-EN (high quality)'),
+    ('intfloat/multilingual-e5-large',       'Multilingual-E5-Large'),
+]
 
 
 class BtierRequiredMixin(LoginRequiredMixin):
@@ -25,12 +32,52 @@ class BtierRequiredMixin(LoginRequiredMixin):
 class DocumentListView(BtierRequiredMixin, View):
     def get(self, request):
         docs = ProviderDocument.objects.filter(provider=request.user)
-        return render(request, 'rag/documents.html', {'documents': docs})
+        try:
+            embed_cfg = request.user.embedding_config
+        except ProviderEmbeddingConfig.DoesNotExist:
+            embed_cfg = None
+        return render(request, 'rag/documents.html', {
+            'documents':       docs,
+            'embed_cfg':       embed_cfg,
+            'model_choices':   EMBED_MODEL_CHOICES,
+        })
+
+
+class EmbeddingConfigSaveView(BtierRequiredMixin, View):
+    """Save or update HuggingFace token + embedding model."""
+    def post(self, request):
+        hf_token    = request.POST.get('hf_token', '').strip()
+        embed_model = request.POST.get('embed_model', '').strip()
+
+        if not hf_token:
+            messages.error(request, 'HuggingFace token is required.')
+            return redirect('rag_documents')
+        if not hf_token.startswith('hf_'):
+            messages.error(request, 'Token should start with "hf_".')
+            return redirect('rag_documents')
+        if not embed_model:
+            messages.error(request, 'Please select an embedding model.')
+            return redirect('rag_documents')
+
+        ProviderEmbeddingConfig.objects.update_or_create(
+            provider=request.user,
+            defaults={'hf_token': hf_token, 'embed_model': embed_model},
+        )
+        messages.success(request, 'Embedding configuration saved.')
+        return redirect('rag_documents')
 
 
 class DocumentUploadView(BtierRequiredMixin, View):
     def post(self, request):
         import os
+
+        # Must have embedding config before ingesting
+        try:
+            request.user.embedding_config
+        except ProviderEmbeddingConfig.DoesNotExist:
+            messages.error(request, 'Please configure your HuggingFace token first.')
+            return redirect('rag_documents')
+
         uploaded = request.FILES.get('file')
         if not uploaded:
             messages.error(request, 'No file selected.')
@@ -38,11 +85,11 @@ class DocumentUploadView(BtierRequiredMixin, View):
 
         ext = os.path.splitext(uploaded.name)[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
-            messages.error(request, f'Unsupported file type: {ext}. Allowed: PDF, TXT, DOCX, MD.')
+            messages.error(request, f'Unsupported file type "{ext}". Allowed: PDF, TXT, DOCX, MD.')
             return redirect('rag_documents')
 
         if uploaded.size > MAX_UPLOAD_MB * 1024 * 1024:
-            messages.error(request, f'File too large. Maximum size is {MAX_UPLOAD_MB} MB.')
+            messages.error(request, f'File too large. Maximum is {MAX_UPLOAD_MB} MB.')
             return redirect('rag_documents')
 
         doc = ProviderDocument.objects.create(
@@ -51,7 +98,7 @@ class DocumentUploadView(BtierRequiredMixin, View):
             original_name=uploaded.name,
         )
         ingest_async(doc.pk)
-        messages.success(request, f'"{uploaded.name}" uploaded — ingestion started.')
+        messages.success(request, f'"{uploaded.name}" uploaded — indexing started.')
         return redirect('rag_documents')
 
 
@@ -69,7 +116,7 @@ class DocumentDeleteView(BtierRequiredMixin, View):
 
 
 class DocumentStatusView(BtierRequiredMixin, View):
-    """AJAX endpoint — returns current status of a document."""
+    """AJAX endpoint — returns current ingestion status."""
     def get(self, request, pk):
         doc = get_object_or_404(ProviderDocument, pk=pk, provider=request.user)
         return JsonResponse({

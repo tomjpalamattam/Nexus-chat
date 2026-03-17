@@ -1,10 +1,16 @@
 """
-Ingestion pipeline: load → split → embed → upsert into Qdrant.
-Each provider gets its own Qdrant collection: provider_{slug}
+Ingestion pipeline using the current langchain_qdrant API:
+  - QdrantVectorStore  (not the old Qdrant class)
+  - Local path-based storage: BASE_DIR/qdrant_store/{provider_slug}/
+  - HuggingFace token fetched from ProviderEmbeddingConfig in DB
+  - Supports PDF, TXT, DOCX, MD
 """
 import os
 import tempfile
 import logging
+from pathlib import Path
+
+from django.conf import settings
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import (
@@ -14,53 +20,49 @@ from langchain_community.document_loaders import (
     UnstructuredMarkdownLoader,
 )
 from langchain_huggingface import HuggingFaceEndpointEmbeddings
-from langchain_qdrant import Qdrant
+from langchain_qdrant import QdrantVectorStore
 from qdrant_client import QdrantClient
-from qdrant_client.models import Distance, VectorParams
 
 logger = logging.getLogger(__name__)
 
-# ── config ────────────────────────────────────────────────────────────────────
-QDRANT_URL      = os.getenv('QDRANT_URL', 'http://localhost:6333')
-HF_API_KEY      = os.getenv('HF_API_KEY', '')
-EMBED_MODEL     = os.getenv('EMBED_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
-EMBED_DIM       = int(os.getenv('EMBED_DIM', '384'))
-CHUNK_SIZE      = int(os.getenv('CHUNK_SIZE', '800'))
-CHUNK_OVERLAP   = int(os.getenv('CHUNK_OVERLAP', '100'))
+CHUNK_SIZE    = int(os.getenv('CHUNK_SIZE',    '800'))
+CHUNK_OVERLAP = int(os.getenv('CHUNK_OVERLAP', '100'))
+
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
-def get_embeddings():
-    return HuggingFaceEndpointEmbeddings(
-        model=EMBED_MODEL,
-        huggingfacehub_api_token=HF_API_KEY,
-    )
+def _qdrant_path(provider) -> str:
+    """Absolute local path for this provider's Qdrant store."""
+    base = Path(settings.BASE_DIR) / 'qdrant_store' / provider.slug
+    base.mkdir(parents=True, exist_ok=True)
+    return str(base)
 
 
-def get_qdrant_client():
-    return QdrantClient(url=QDRANT_URL)
-
-
-def collection_name_for(provider) -> str:
+def _collection_name(provider) -> str:
     return f'provider_{provider.slug}'
 
 
-def ensure_collection(client: QdrantClient, name: str):
-    """Create the Qdrant collection if it doesn't exist yet."""
-    existing = [c.name for c in client.get_collections().collections]
-    if name not in existing:
-        client.create_collection(
-            collection_name=name,
-            vectors_config=VectorParams(size=EMBED_DIM, distance=Distance.COSINE),
+def _get_embeddings(provider):
+    """Build HuggingFaceEndpointEmbeddings from the provider's DB config."""
+    try:
+        cfg = provider.embedding_config
+    except Exception:
+        raise ValueError(
+            f'Provider {provider.username} has no embedding config. '
+            'Please add a HuggingFace token in Dashboard → Knowledge Base.'
         )
-        logger.info('Created Qdrant collection: %s', name)
+    return HuggingFaceEndpointEmbeddings(
+        model=cfg.embed_model,
+        task='feature-extraction',
+        huggingfacehub_api_token=cfg.hf_token,
+    )
 
 
-def loader_for(filepath: str, ext: str):
+def _loader_for(filepath: str, ext: str):
     ext = ext.lower()
     if ext == '.pdf':
         return PyMuPDFLoader(filepath)
-    elif ext in ('.txt',):
+    elif ext == '.txt':
         return TextLoader(filepath, encoding='utf-8')
     elif ext in ('.docx', '.doc'):
         return UnstructuredWordDocumentLoader(filepath)
@@ -70,29 +72,29 @@ def loader_for(filepath: str, ext: str):
         raise ValueError(f'Unsupported file extension: {ext}')
 
 
-# ── main entry point ──────────────────────────────────────────────────────────
+# ── main entry points ─────────────────────────────────────────────────────────
 
 def ingest_document(provider_document) -> int:
     """
-    Load, split, embed and upsert a ProviderDocument.
-    Returns the number of chunks inserted.
-    Raises on failure (caller should set status=error).
+    Load → split → embed → upsert into local QdrantVectorStore.
+    Returns chunk count. Raises on failure.
     """
     from rag.models import ProviderCollection
 
-    doc_file  = provider_document.file
-    ext       = os.path.splitext(provider_document.original_name)[1]
     provider  = provider_document.provider
-    col_name  = collection_name_for(provider)
+    ext       = os.path.splitext(provider_document.original_name)[1]
+    col_name  = _collection_name(provider)
+    path      = _qdrant_path(provider)
+    embeddings = _get_embeddings(provider)
 
-    # Write the Django FieldFile to a temp file so loaders can read it
+    # Write uploaded file to a temp path for the loader
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
-        for chunk in doc_file.chunks():
+        for chunk in provider_document.file.chunks():
             tmp.write(chunk)
         tmp_path = tmp.name
 
     try:
-        loader   = loader_for(tmp_path, ext)
+        loader   = _loader_for(tmp_path, ext)
         raw_docs = loader.load()
 
         splitter = RecursiveCharacterTextSplitter(
@@ -101,27 +103,29 @@ def ingest_document(provider_document) -> int:
         )
         chunks = splitter.split_documents(raw_docs)
 
-        # Tag every chunk with provider info for future filtering
+        # Tag every chunk with provider + document metadata
         for chunk in chunks:
-            chunk.metadata['provider_slug']    = provider.slug
-            chunk.metadata['provider_id']      = provider.pk
-            chunk.metadata['document_id']      = provider_document.pk
-            chunk.metadata['original_name']    = provider_document.original_name
+            chunk.metadata['provider_slug']  = provider.slug
+            chunk.metadata['provider_id']    = provider.pk
+            chunk.metadata['document_id']    = provider_document.pk
+            chunk.metadata['original_name']  = provider_document.original_name
 
-        embeddings = get_embeddings()
-        client     = get_qdrant_client()
-        ensure_collection(client, col_name)
-
-        Qdrant(
-            client=client,
+        # Use from_documents for initial creation — it creates the collection
+        # if it doesn't exist yet, or adds to it if it does.
+        QdrantVectorStore.from_documents(
+            chunks,
+            embedding=embeddings,
+            path=path,
             collection_name=col_name,
-            embeddings=embeddings,
-        ).add_documents(chunks)
+        )
 
-        # Record the collection mapping (idempotent)
-        ProviderCollection.objects.get_or_create(
+        # Record/update the collection mapping
+        ProviderCollection.objects.update_or_create(
             provider=provider,
-            defaults={'collection_name': col_name},
+            defaults={
+                'collection_name': col_name,
+                'local_path': path,
+            },
         )
 
         return len(chunks)
@@ -130,13 +134,17 @@ def ingest_document(provider_document) -> int:
 
 
 def delete_document_vectors(provider_document):
-    """Remove all vectors that belong to a specific document from Qdrant."""
+    """
+    Remove all vectors belonging to a specific document from the local store.
+    Uses QdrantClient directly to issue a filtered delete.
+    """
     from qdrant_client.models import Filter, FieldCondition, MatchValue
 
     provider = provider_document.provider
-    col_name = collection_name_for(provider)
-    client   = get_qdrant_client()
+    col_name = _collection_name(provider)
+    path     = _qdrant_path(provider)
 
+    client = QdrantClient(path=path)
     existing = [c.name for c in client.get_collections().collections]
     if col_name not in existing:
         return
@@ -152,30 +160,20 @@ def delete_document_vectors(provider_document):
             ]
         ),
     )
+    client.close()
 
 
-def get_retriever(provider, k: int = 4):
-    """Return a LangChain VectorStoreRetriever for a provider's collection."""
-    col_name   = collection_name_for(provider)
-    embeddings = get_embeddings()
-    client     = get_qdrant_client()
+def get_vectorstore(provider) -> QdrantVectorStore:
+    """
+    Return a QdrantVectorStore connected to the provider's local collection.
+    Used by the agent's retrieve_context tool.
+    """
+    col_name   = _collection_name(provider)
+    path       = _qdrant_path(provider)
+    embeddings = _get_embeddings(provider)
 
-    store = Qdrant(
-        client=client,
+    return QdrantVectorStore.from_existing_collection(
         collection_name=col_name,
-        embeddings=embeddings,
-    )
-    return store.as_retriever(search_kwargs={'k': k})
-
-
-def get_vectorstore(provider):
-    """Return the raw Qdrant vectorstore for a provider."""
-    col_name   = collection_name_for(provider)
-    embeddings = get_embeddings()
-    client     = get_qdrant_client()
-
-    return Qdrant(
-        client=client,
-        collection_name=col_name,
-        embeddings=embeddings,
+        embedding=embeddings,
+        path=path,
     )
