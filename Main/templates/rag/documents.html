@@ -1,0 +1,144 @@
+{% extends "dashboard/base.html" %}
+
+{% block title %}Documents — Dashboard{% endblock %}
+
+{% block dashboard_content %}
+<style>
+  .upload-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 28px;
+  }
+  .upload-card h2 { font-size: 15px; font-weight: 600; margin-bottom: 16px; }
+  .upload-row { display: flex; gap: 12px; align-items: flex-end; }
+  .upload-row input[type=file] {
+    flex: 1; background: var(--surface2); border: 1px dashed var(--border);
+    border-radius: var(--radius-sm); padding: 10px 12px; font-size: 14px;
+    color: var(--text-muted); cursor: pointer;
+  }
+  .upload-row input[type=file]:hover { border-color: var(--accent); }
+  .hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+
+  .doc-list { display: flex; flex-direction: column; gap: 10px; }
+  .doc-card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 20px;
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+  }
+  .doc-name { font-weight: 500; font-size: 14px; }
+  .doc-meta { font-size: 12px; color: var(--text-muted); margin-top: 3px; }
+  .status-badge {
+    font-size: 11px; font-weight: 600; padding: 3px 10px;
+    border-radius: 20px; text-transform: uppercase; letter-spacing: .3px;
+    white-space: nowrap;
+  }
+  .status-pending   { background: rgba(136,136,150,.15); color: var(--text-muted); }
+  .status-ingesting { background: rgba(124,106,247,.15); color: var(--accent-light); }
+  .status-ready     { background: rgba(74,222,128,.12);  color: var(--green); }
+  .status-error     { background: rgba(248,113,113,.12); color: var(--red); }
+  .doc-actions { display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+  .empty { color: var(--text-muted); font-size: 14px; padding: 8px 0; }
+
+  /* spinner for ingesting */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; width: 10px; height: 10px; border: 2px solid var(--accent-light); border-top-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; vertical-align: middle; margin-right: 4px; }
+</style>
+
+<div class="d-header">
+  <h1>Knowledge Base</h1>
+  <p>Upload documents for your RAG-powered chat. Supported: PDF, TXT, DOCX, MD.</p>
+</div>
+
+<!-- upload form -->
+<div class="upload-card">
+  <h2>Upload Document</h2>
+  <form method="post" action="{% url 'rag_upload' %}" enctype="multipart/form-data">
+    {% csrf_token %}
+    <div class="upload-row">
+      <input type="file" name="file" accept=".pdf,.txt,.docx,.doc,.md,.markdown" required>
+      <button type="submit" class="btn btn-primary">Upload &amp; Ingest</button>
+    </div>
+  </form>
+  <p class="hint">Max 50 MB · After upload, indexing runs in the background (status updates automatically).</p>
+</div>
+
+<!-- document list -->
+<div class="doc-list" id="docList">
+  {% for doc in documents %}
+  <div class="doc-card" data-doc-id="{{ doc.pk }}" data-status="{{ doc.status }}">
+    <div style="flex:1;min-width:0">
+      <div class="doc-name">{{ doc.original_name }}</div>
+      <div class="doc-meta">
+        Uploaded {{ doc.uploaded_at|date:"M d, Y H:i" }}
+        {% if doc.status == 'ready' %} · {{ doc.chunk_count }} chunks{% endif %}
+        {% if doc.status == 'error' %} · <span style="color:var(--red)">{{ doc.error_message|truncatechars:80 }}</span>{% endif %}
+      </div>
+    </div>
+    <div class="doc-actions">
+      <span class="status-badge status-{{ doc.status }}" id="status-{{ doc.pk }}">
+        {% if doc.status == 'ingesting' %}<span class="spinner"></span>{% endif %}
+        {{ doc.get_status_display }}
+      </span>
+      <form method="post" action="{% url 'rag_delete' doc.pk %}"
+            onsubmit="return confirm('Delete this document and remove its vectors?')">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-ghost"
+                style="font-size:12px;padding:5px 10px;color:var(--red)">Delete</button>
+      </form>
+    </div>
+  </div>
+  {% empty %}
+  <div class="empty">No documents yet. Upload one above to enable RAG on your chat page.</div>
+  {% endfor %}
+</div>
+
+<script>
+// Poll status for any doc that is pending or ingesting
+function pollPending() {
+  document.querySelectorAll('[data-doc-id]').forEach(card => {
+    const status = card.dataset.status;
+    if (status !== 'pending' && status !== 'ingesting') return;
+
+    const pk  = card.dataset.docId;
+    const url = `{% url 'rag_status' 0 %}`.replace('/0/', `/${pk}/`);
+
+    fetch(url)
+      .then(r => r.json())
+      .then(data => {
+        const badge = document.getElementById(`status-${pk}`);
+        if (!badge) return;
+
+        // update badge text + class
+        badge.className = `status-badge status-${data.status}`;
+        const labels = {pending:'Pending', ingesting:'Ingesting', ready:'Ready', error:'Error'};
+        badge.innerHTML = (data.status === 'ingesting')
+          ? `<span class="spinner"></span>${labels[data.status]}`
+          : labels[data.status];
+
+        card.dataset.status = data.status;
+
+        // update meta line
+        const meta = card.querySelector('.doc-meta');
+        if (data.status === 'ready') {
+          meta.innerHTML = meta.innerHTML.replace(/·.*$/, '') + ` · ${data.chunk_count} chunks`;
+        } else if (data.status === 'error') {
+          meta.innerHTML = meta.innerHTML.replace(/·.*$/, '') +
+            ` · <span style="color:var(--red)">${data.error}</span>`;
+        }
+      })
+      .catch(() => {});
+  });
+}
+
+// Poll every 3 s while there are pending/ingesting docs
+const hasPending = [...document.querySelectorAll('[data-doc-id]')]
+  .some(c => ['pending','ingesting'].includes(c.dataset.status));
+if (hasPending) {
+  const interval = setInterval(() => {
+    pollPending();
+    const stillPending = [...document.querySelectorAll('[data-doc-id]')]
+      .some(c => ['pending','ingesting'].includes(c.dataset.status));
+    if (!stillPending) clearInterval(interval);
+  }, 3000);
+}
+</script>
+{% endblock %}

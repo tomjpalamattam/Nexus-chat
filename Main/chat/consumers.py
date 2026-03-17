@@ -9,7 +9,7 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
     async def connect(self):
         self.conversation_id = self.scope['url_route']['kwargs']['conversation_id']
-        self.user = self.scope['user']
+        self.user    = self.scope['user']
         self.session = self.scope['session']
         await self.accept()
 
@@ -17,9 +17,8 @@ class ChatConsumer(AsyncWebsocketConsumer):
         pass
 
     async def receive(self, text_data):
-        data = json.loads(text_data)
+        data         = json.loads(text_data)
         user_message = data.get('message', '').strip()
-
         if not user_message:
             return
 
@@ -37,18 +36,34 @@ class ChatConsumer(AsyncWebsocketConsumer):
 
         history = await self.get_history(conversation)
 
+        # ── choose RAG agent or plain LLM ─────────────────────────────────
+        provider = await database_sync_to_async(lambda: conversation.provider)()
+        use_rag  = provider is not None and await self.provider_has_docs(provider)
+
         full_response = ''
-        async for chunk in stream_response(
-            api_config,
-            history,
-            user_message,
-            conversation.system_prompt
-        ):
-            full_response += chunk
-            await self.send(text_data=json.dumps({
-                'type': 'chunk',
-                'content': chunk,
-            }))
+
+        if use_rag:
+            from rag.agent import stream_agent_response
+            thread_id = f'conv_{conversation.pk}'
+            async for chunk in stream_agent_response(
+                api_config,
+                provider,
+                history,
+                user_message,
+                conversation.system_prompt,
+                thread_id,
+            ):
+                full_response += chunk
+                await self.send(text_data=json.dumps({'type': 'chunk', 'content': chunk}))
+        else:
+            async for chunk in stream_response(
+                api_config,
+                history,
+                user_message,
+                conversation.system_prompt,
+            ):
+                full_response += chunk
+                await self.send(text_data=json.dumps({'type': 'chunk', 'content': chunk}))
 
         await self.save_message(conversation, 'assistant', full_response)
         await self.send(text_data=json.dumps({'type': 'done'}))
@@ -57,15 +72,10 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def get_conversation(self):
         try:
             conv = Conversation.objects.get(pk=self.conversation_id)
-            # authenticated user — must own the conversation
             if self.user.is_authenticated:
-                if conv.user == self.user:
-                    return conv
-            # anonymous — must match session key
+                return conv if conv.user == self.user else None
             else:
-                if conv.session_key == self.session.session_key:
-                    return conv
-            return None
+                return conv if conv.session_key == self.session.session_key else None
         except Conversation.DoesNotExist:
             return None
 
@@ -79,8 +89,13 @@ class ChatConsumer(AsyncWebsocketConsumer):
     def save_message(self, conversation, role, content):
         return Message.objects.create(conversation=conversation, role=role, content=content)
 
+    @database_sync_to_async
+    def provider_has_docs(self, provider):
+        from rag.models import ProviderDocument
+        return ProviderDocument.objects.filter(
+            provider=provider,
+            status=ProviderDocument.Status.READY,
+        ).exists()
+
     async def send_error(self, message):
-        await self.send(text_data=json.dumps({
-            'type': 'error',
-            'message': message,
-        }))
+        await self.send(text_data=json.dumps({'type': 'error', 'message': message}))

@@ -23,17 +23,25 @@
   <aside class="d-sidebar">
     <div class="d-logo">⬡ Dashboard</div>
     <nav class="d-nav">
-      <a href="{% url 'dashboard_home' %}" class="{% if request.resolver_match.url_name == 'dashboard_home' %}active{% endif %}">
+      <a href="{% url 'dashboard_home' %}"
+         class="{% if request.resolver_match.url_name == 'dashboard_home' %}active{% endif %}">
         ▦ Overview
       </a>
-      <a href="{% url 'dashboard_users' %}" class="{% if 'users' in request.resolver_match.url_name %}active{% endif %}">
+      <a href="{% url 'dashboard_users' %}"
+         class="{% if 'users' in request.resolver_match.url_name %}active{% endif %}">
         👥 Users
       </a>
-      <a href="{% url 'dashboard_api_keys' %}" class="{% if 'api_key' in request.resolver_match.url_name %}active{% endif %}">
+      <a href="{% url 'dashboard_api_keys' %}"
+         class="{% if 'api_key' in request.resolver_match.url_name %}active{% endif %}">
         🔑 API Keys
       </a>
-      <a href="{% url 'dashboard_conversations' %}" class="{% if 'conversation' in request.resolver_match.url_name %}active{% endif %}">
+      <a href="{% url 'dashboard_conversations' %}"
+         class="{% if 'conversation' in request.resolver_match.url_name %}active{% endif %}">
         💬 Conversations
+      </a>
+      <a href="{% url 'rag_documents' %}"
+         class="{% if 'rag' in request.resolver_match.url_name %}active{% endif %}">
+        📚 Knowledge Base
       </a>
       <a href="/chat/{{ request.user.slug }}/" target="_blank">
         ↗ My Chat Page

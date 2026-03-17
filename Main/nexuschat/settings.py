@@ -22,6 +22,8 @@ INSTALLED_APPS = [
     # our apps
     'accounts',
     'chat',
+    'dashboard',
+    'rag',        # RAG app
     'tools',
 ]
 
@@ -53,7 +55,6 @@ TEMPLATES = [
     },
 ]
 
-# ASGI for channels
 ASGI_APPLICATION = 'nexuschat.asgi.application'
 
 DATABASES = {
@@ -63,23 +64,8 @@ DATABASES = {
     }
 }
 
-
-""" 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': os.getenv('DB_NAME'),
-        'USER': os.getenv('DB_USER'),
-        'PASSWORD': os.getenv('DB_PASSWORD'),
-        'HOST': os.getenv('DB_HOST', 'localhost'),
-        'PORT': os.getenv('DB_PORT', '5432'),
-    }
-} 
-"""
-
 AUTH_USER_MODEL = 'accounts.User'
 
-# Channels — in-memory for now, swap for Redis in production
 CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels.layers.InMemoryChannelLayer',
@@ -109,3 +95,13 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 LOGIN_URL = '/accounts/login/'
 LOGIN_REDIRECT_URL = '/chat/'
 LOGOUT_REDIRECT_URL = '/accounts/login/'
+
+FILE_UPLOAD_MAX_MEMORY_SIZE = 52428800  # 50 MB
+
+# ── RAG / Qdrant / Embeddings ─────────────────────────────────────────────────
+QDRANT_URL    = os.getenv('QDRANT_URL',  'http://localhost:6333')
+HF_API_KEY    = os.getenv('HF_API_KEY',  '')
+EMBED_MODEL   = os.getenv('EMBED_MODEL', 'sentence-transformers/all-MiniLM-L6-v2')
+EMBED_DIM     = int(os.getenv('EMBED_DIM',     '384'))
+CHUNK_SIZE    = int(os.getenv('CHUNK_SIZE',    '800'))
+CHUNK_OVERLAP = int(os.getenv('CHUNK_OVERLAP', '100'))
