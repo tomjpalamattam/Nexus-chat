@@ -12,4 +12,5 @@ urlpatterns = [
     path('api-keys/<int:pk>/set-default/', views.DashboardSetDefaultAPIKeyView.as_view(), name='dashboard_set_default_api_key'),
     path('conversations/', views.DashboardConversationsView.as_view(), name='dashboard_conversations'),
     path('conversations/<int:pk>/', views.DashboardConversationDetailView.as_view(), name='dashboard_conversation_detail'),
+    path('conversations/<int:pk>/delete/', views.DashboardDeleteConversationView.as_view(), name='dashboard_delete_conversation'),
 ]

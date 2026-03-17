@@ -10,7 +10,6 @@ from chat.models import Conversation, Message
 
 
 class BtierRequiredMixin(LoginRequiredMixin):
-    """Only B-tier users can access the dashboard."""
     def dispatch(self, request, *args, **kwargs):
         if not request.user.is_authenticated:
             return self.handle_no_permission()
@@ -121,3 +120,11 @@ class DashboardConversationDetailView(BtierRequiredMixin, View):
             'conversation': conversation,
             'messages': msgs,
         })
+
+
+class DashboardDeleteConversationView(BtierRequiredMixin, View):
+    def post(self, request, pk):
+        conversation = get_object_or_404(Conversation, pk=pk, provider=request.user)
+        conversation.delete()
+        messages.success(request, 'Conversation deleted.')
+        return redirect('dashboard_conversations')

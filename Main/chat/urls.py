@@ -5,5 +5,6 @@ urlpatterns = [
     path('', views.ChatHomeView.as_view(), name='chat_home'),
     path('new/', views.NewConversationView.as_view(), name='new_conversation'),
     path('<int:pk>/', views.ConversationView.as_view(), name='conversation'),
+    path('<int:pk>/delete/', views.DeleteConversationView.as_view(), name='delete_conversation'),
     path('u/<slug:provider_slug>/', views.PublicChatView.as_view(), name='public_chat'),
 ]

@@ -34,6 +34,17 @@ class ConversationView(LoginRequiredMixin, View):
         })
 
 
+class DeleteConversationView(LoginRequiredMixin, View):
+    def post(self, request, pk):
+        conversation = get_object_or_404(Conversation, pk=pk, user=request.user)
+        conversation.delete()
+        # Redirect to the next available conversation or new chat
+        next_conv = Conversation.objects.filter(user=request.user).first()
+        if next_conv:
+            return redirect('conversation', pk=next_conv.pk)
+        return redirect('new_conversation')
+
+
 class PublicChatView(View):
     def get(self, request, provider_slug):
         provider = get_object_or_404(User, slug=provider_slug, tier=User.Tier.B)

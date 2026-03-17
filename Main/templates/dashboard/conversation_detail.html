@@ -5,6 +5,9 @@
 {% block dashboard_content %}
 <style>
   .back { font-size: 13px; color: var(--text-muted); display: inline-block; margin-bottom: 20px; }
+  .detail-header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 32px; }
+  .del-btn { background: none; border: 1px solid transparent; border-radius: var(--radius-sm); padding: 6px 14px; font-size: 13px; color: var(--text-dim); cursor: pointer; font-family: inherit; transition: all .15s; }
+  .del-btn:hover { border-color: rgba(248,113,113,.4); color: var(--red); background: rgba(248,113,113,.08); }
   .msg-wrap { display: flex; gap: 12px; margin-bottom: 16px; max-width: 680px; }
   .msg-wrap.user { flex-direction: row-reverse; }
   .avatar { width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; font-weight: 600; flex-shrink: 0; }
@@ -19,9 +22,16 @@
 
 <a href="{% url 'dashboard_conversations' %}" class="back">← Back to conversations</a>
 
-<div class="d-header">
-  <h1>{{ conversation.title }}</h1>
-  <p>{{ conversation.user.username|default:"Anonymous" }} · {{ conversation.created_at|date:"M d, Y" }}</p>
+<div class="detail-header">
+  <div class="d-header" style="margin:0">
+    <h1>{{ conversation.title }}</h1>
+    <p>{{ conversation.user.username|default:"Anonymous" }} · {{ conversation.created_at|date:"M d, Y" }}</p>
+  </div>
+  <form method="post" action="{% url 'dashboard_delete_conversation' conversation.pk %}"
+        style="margin:0" onsubmit="return confirm('Delete this conversation? This cannot be undone.')">
+    {% csrf_token %}
+    <button type="submit" class="del-btn">🗑 Delete conversation</button>
+  </form>
 </div>
 
 {% for msg in messages %}
