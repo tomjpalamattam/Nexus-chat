@@ -42,15 +42,24 @@ def _collection_name(provider) -> str:
     return f'provider_{provider.slug}'
 
 
-def _get_embeddings(provider):
-    """Build HuggingFaceEndpointEmbeddings from the provider's DB config."""
+def _get_embedding_cfg(provider):
+    """
+    Fetch the ProviderEmbeddingConfig for a provider.
+    Pure DB access — must be called from a sync context (use
+    database_sync_to_async when calling from async code).
+    """
+    from rag.models import ProviderEmbeddingConfig
     try:
-        cfg = provider.embedding_config
-    except Exception:
+        return ProviderEmbeddingConfig.objects.get(provider=provider)
+    except ProviderEmbeddingConfig.DoesNotExist:
         raise ValueError(
-            f'Provider {provider.username} has no embedding config. '
+            f'Provider "{provider.username}" has no embedding config. '
             'Please add a HuggingFace token in Dashboard → Knowledge Base.'
         )
+
+
+def _build_embeddings(cfg) -> HuggingFaceEndpointEmbeddings:
+    """Build embeddings object from a ProviderEmbeddingConfig instance."""
     return HuggingFaceEndpointEmbeddings(
         model=cfg.embed_model,
         task='feature-extraction',
@@ -77,17 +86,17 @@ def _loader_for(filepath: str, ext: str):
 def ingest_document(provider_document) -> int:
     """
     Load → split → embed → upsert into local QdrantVectorStore.
-    Returns chunk count. Raises on failure.
+    Runs in a background thread (sync context). Returns chunk count.
     """
     from rag.models import ProviderCollection
 
-    provider  = provider_document.provider
-    ext       = os.path.splitext(provider_document.original_name)[1]
-    col_name  = _collection_name(provider)
-    path      = _qdrant_path(provider)
-    embeddings = _get_embeddings(provider)
+    provider   = provider_document.provider
+    ext        = os.path.splitext(provider_document.original_name)[1]
+    col_name   = _collection_name(provider)
+    path       = _qdrant_path(provider)
+    cfg        = _get_embedding_cfg(provider)
+    embeddings = _build_embeddings(cfg)
 
-    # Write uploaded file to a temp path for the loader
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         for chunk in provider_document.file.chunks():
             tmp.write(chunk)
@@ -103,15 +112,12 @@ def ingest_document(provider_document) -> int:
         )
         chunks = splitter.split_documents(raw_docs)
 
-        # Tag every chunk with provider + document metadata
         for chunk in chunks:
-            chunk.metadata['provider_slug']  = provider.slug
-            chunk.metadata['provider_id']    = provider.pk
-            chunk.metadata['document_id']    = provider_document.pk
-            chunk.metadata['original_name']  = provider_document.original_name
+            chunk.metadata['provider_slug'] = provider.slug
+            chunk.metadata['provider_id']   = provider.pk
+            chunk.metadata['document_id']   = provider_document.pk
+            chunk.metadata['original_name'] = provider_document.original_name
 
-        # Use from_documents for initial creation — it creates the collection
-        # if it doesn't exist yet, or adds to it if it does.
         QdrantVectorStore.from_documents(
             chunks,
             embedding=embeddings,
@@ -119,13 +125,9 @@ def ingest_document(provider_document) -> int:
             collection_name=col_name,
         )
 
-        # Record/update the collection mapping
         ProviderCollection.objects.update_or_create(
             provider=provider,
-            defaults={
-                'collection_name': col_name,
-                'local_path': path,
-            },
+            defaults={'collection_name': col_name, 'local_path': path},
         )
 
         return len(chunks)
@@ -134,19 +136,17 @@ def ingest_document(provider_document) -> int:
 
 
 def delete_document_vectors(provider_document):
-    """
-    Remove all vectors belonging to a specific document from the local store.
-    Uses QdrantClient directly to issue a filtered delete.
-    """
+    """Remove all vectors for a specific document from the local store."""
     from qdrant_client.models import Filter, FieldCondition, MatchValue
 
     provider = provider_document.provider
     col_name = _collection_name(provider)
     path     = _qdrant_path(provider)
 
-    client = QdrantClient(path=path)
+    client   = QdrantClient(path=path)
     existing = [c.name for c in client.get_collections().collections]
     if col_name not in existing:
+        client.close()
         return
 
     client.delete(
@@ -163,14 +163,15 @@ def delete_document_vectors(provider_document):
     client.close()
 
 
-def get_vectorstore(provider) -> QdrantVectorStore:
+def get_vectorstore(cfg, provider) -> QdrantVectorStore:
     """
-    Return a QdrantVectorStore connected to the provider's local collection.
-    Used by the agent's retrieve_context tool.
+    Return a QdrantVectorStore for a provider's local collection.
+    Accepts an already-fetched ProviderEmbeddingConfig so the caller
+    can do the DB lookup in a sync context before entering async code.
     """
     col_name   = _collection_name(provider)
     path       = _qdrant_path(provider)
-    embeddings = _get_embeddings(provider)
+    embeddings = _build_embeddings(cfg)
 
     return QdrantVectorStore.from_existing_collection(
         collection_name=col_name,

@@ -12,8 +12,8 @@
   .d-footer { padding: 16px 20px; border-top: 1px solid var(--border); }
   .d-footer .username { font-size: 13px; font-weight: 500; }
   .d-footer .tier { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; }
-  .d-footer a { font-size: 13px; color: var(--text-muted); text-decoration: none; }
-  .d-footer a:hover { color: var(--text); }
+  .d-footer .logout-btn { background: none; border: none; padding: 0; font-size: 13px; color: var(--text-muted); cursor: pointer; font-family: inherit; }
+  .d-footer .logout-btn:hover { color: var(--text); }
   .d-main { flex: 1; padding: 40px; min-width: 0; }
   .d-header { margin-bottom: 32px; }
   .d-header h1 { font-size: 24px; font-weight: 600; }
@@ -43,14 +43,17 @@
          class="{% if 'rag' in request.resolver_match.url_name %}active{% endif %}">
         📚 Knowledge Base
       </a>
-      <a href="/chat/{{ request.user.slug }}/" target="_blank">
+      <a href="/chat/u/{{ request.user.slug }}/" target="_blank">
         ↗ My Chat Page
       </a>
     </nav>
     <div class="d-footer">
       <div class="username">{{ request.user.username }}</div>
       <div class="tier">{{ request.user.get_tier_display }}</div>
-      <a href="{% url 'logout' %}">Sign out</a>
+      <form method="post" action="{% url 'logout' %}" style="margin:0">
+        {% csrf_token %}
+        <button type="submit" class="logout-btn">Sign out</button>
+      </form>
     </div>
   </aside>
   <main class="d-main">

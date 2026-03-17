@@ -14,4 +14,5 @@ Main/db.sqlite
 Main/.env
 Main/data/
 Main/playwright/session.json
+Main/qdrant_store
 rag-final-boss-1.ipynb

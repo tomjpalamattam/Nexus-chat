@@ -41,11 +41,9 @@ class PublicChatView(View):
         if not request.session.session_key:
             request.session.create()
 
-        # look up by user if logged in, otherwise by session
         if request.user.is_authenticated:
             conversation = Conversation.objects.filter(
-                user=request.user,
-                provider=provider,
+                user=request.user, provider=provider,
             ).first()
             if not conversation:
                 conversation = Conversation.objects.create(
@@ -55,8 +53,7 @@ class PublicChatView(View):
                 )
         else:
             conversation = Conversation.objects.filter(
-                session_key=request.session.session_key,
-                provider=provider,
+                session_key=request.session.session_key, provider=provider,
             ).first()
             if not conversation:
                 conversation = Conversation.objects.create(
